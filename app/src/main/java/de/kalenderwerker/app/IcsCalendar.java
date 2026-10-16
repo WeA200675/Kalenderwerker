@@ -203,6 +203,42 @@ public final class IcsCalendar {
             return allDay ? startDateTime().plusDays(1) : startDateTime().plusHours(1);
         }
 
+        public long startMillis() { return epochMillis(startValue, startParams, allDay); }
+        public long endMillis() {
+            if (endValue.trim().isEmpty()) {
+                if (!duration.trim().isEmpty()) return startMillis() + durationSeconds(duration) * 1000L;
+                return startMillis() + (allDay ? 86400000L : 3600000L);
+            }
+            return epochMillis(endValue, endParams, allDay);
+        }
+
+        public String eventZoneId() {
+            if (allDay) return "UTC";
+            if (startValue.endsWith("Z")) return "UTC";
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?i)(?:^|;)TZID=(?:\"([^\"]+)\"|([^;:]+))").matcher(startParams);
+            if (matcher.find()) {
+                String id = matcher.group(1) == null ? matcher.group(2) : matcher.group(1);
+                try { return ZoneId.of(id).getId(); } catch (Exception ignored) { }
+            }
+            return ZoneId.systemDefault().getId();
+        }
+
+        private static long epochMillis(String raw, String params, boolean allDay) {
+            try {
+                if (allDay || raw.length() == 8) return LocalDate.parse(raw.substring(0, 8), DATE).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
+                boolean utc = raw.endsWith("Z");
+                String value = utc ? raw.substring(0, raw.length() - 1) : raw;
+                LocalDateTime dateTime = parseDateTime(value, "");
+                if (utc) return dateTime.toInstant(ZoneOffset.UTC).toEpochMilli();
+                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?i)(?:^|;)TZID=(?:\"([^\"]+)\"|([^;:]+))").matcher(params);
+                if (matcher.find()) {
+                    String id = matcher.group(1) == null ? matcher.group(2) : matcher.group(1);
+                    try { return dateTime.atZone(ZoneId.of(id)).toInstant().toEpochMilli(); } catch (Exception ignored) { }
+                }
+                return dateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+            } catch (Exception ignored) { return System.currentTimeMillis(); }
+        }
+
         public String displayTime() {
             if (allDay) return "Ganztägig";
             return startDateTime().format(DateTimeFormatter.ofPattern("dd.MM.yyyy · HH:mm", Locale.GERMANY));

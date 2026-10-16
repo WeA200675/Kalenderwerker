@@ -1,15 +1,16 @@
 # Kalenderwerker for Android
 
-Native Android app for importing, editing, and exporting `.ics` calendars. Files are read locally, the current draft is saved in private app storage, and exported calendars can be opened in an installed calendar app.
+Native Android app for importing and editing `.ics` calendars, then writing events to a selected calendar on the device or exporting a portable `.ics` file.
 
 ## Features
 
 - Import one or more iCalendar files with Android's document picker or open a shared `.ics` file.
+- Select a writable calendar account available through Android's Calendar Provider (Google, Microsoft, Samsung, device calendars, and other installed providers).
 - Edit event titles, start/end dates, all-day state, location, and description; add or remove entries.
-- Preserve recurrence rules, alarms, time-zone definitions, and unknown event properties when exporting.
-- Save as `.ics`, then choose a compatible calendar app and destination calendar.
-- No network permission or account credentials are required.
-- GitHub Actions builds a debug APK for each change.
+- Preserve recurrence rules, time-zone definitions, alarms, and unknown event properties in the `.ics` export.
+- Save as `.ics` and open it in a compatible calendar app as a fallback.
+- Keep the draft in private app storage; request calendar access only when the user selects a device calendar. No network permission or account credentials are used.
+- GitHub Actions builds an installable debug APK for each change.
 
 ## Build
 
