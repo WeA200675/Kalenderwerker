@@ -1,0 +1,86 @@
+package de.kalenderwerker.app;
+
+import android.app.*;
+import android.content.*;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Bundle;
+import android.text.InputType;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.*;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.time.*;
+import java.time.format.*;
+import java.util.*;
+import java.util.concurrent.Executors;
+
+public final class MainActivity extends Activity {
+    private static final int OPEN=1, SAVE=2, INK=Color.rgb(32,40,36), GREEN=Color.rgb(31,96,72), MUTED=Color.rgb(103,115,107), BG=Color.rgb(245,246,242);
+    private static final DateTimeFormatter DATE=DateTimeFormatter.ofPattern("yyyy-MM-dd",Locale.ROOT), DATE_TIME=DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm",Locale.ROOT);
+    private final IcsCalendar data=new IcsCalendar(); private final java.util.concurrent.ExecutorService io=Executors.newSingleThreadExecutor();
+    private LinearLayout rows; private EditText name; private TextView count; private boolean settingName;
+
+    @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().setStatusBarColor(BG);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);load();build();incoming(getIntent());}
+    @Override protected void onNewIntent(Intent i){super.onNewIntent(i);setIntent(i);incoming(i);}
+    @Override protected void onDestroy(){io.shutdown();super.onDestroy();}
+
+    private void build(){
+        ScrollView sc=new ScrollView(this);sc.setFillViewport(true);sc.setBackgroundColor(BG);LinearLayout page=col();page.setPadding(dp(20),dp(24),dp(20),dp(28));sc.addView(page);
+        TextView brand=txt("▦  Kalenderwerker     ·     ICS-EDITOR",18,INK,true);page.addView(brand);
+        TextView h=txt("Termine bearbeiten.\nÜberall weiterverwenden.",29,INK,true);h.setPadding(0,dp(28),0,dp(7));page.addView(h);
+        page.addView(txt("ICS-Datei auswählen, Einträge ändern und in eine Kalender-App übernehmen.",15,MUTED,false),bottom(dp(18)));
+        LinearLayout upload=card();upload.addView(txt("Kalenderdatei",17,INK,true));TextView tip=txt("Die Datei wird lokal auf diesem Gerät verarbeitet.",13,MUTED,false);tip.setPadding(0,dp(5),0,dp(12));upload.addView(tip);Button pick=btn("ICS-Datei auswählen",GREEN,Color.WHITE);pick.setOnClickListener(v->openPicker());upload.addView(pick);page.addView(upload,bottom(dp(12)));
+        LinearLayout nameCard=card();nameCard.addView(txt("Name des Zielkalenders",13,INK,true));name=edit("z. B. Arbeit, Familie oder Urlaub",InputType.TYPE_CLASS_TEXT);name.setText(data.name);nameCard.addView(name,top(dp(5)));TextView sub=txt("Wird im ICS-Export als Kalendername gespeichert.",12,MUTED,false);sub.setPadding(0,dp(4),0,0);nameCard.addView(sub);name.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int c){if(!settingName){data.name=s.toString();save();}}public void afterTextChanged(android.text.Editable e){}});page.addView(nameCard,bottom(dp(12)));
+        LinearLayout head=row();head.setPadding(dp(2),dp(8),dp(2),dp(8));head.addView(txt("Deine Einträge",19,INK,true),new LinearLayout.LayoutParams(0,-2,1));count=txt("0 Termine",12,MUTED,false);head.addView(count);page.addView(head);
+        rows=col();page.addView(rows,bottom(dp(12)));
+        Button add=btn("＋  Termin hinzufügen",Color.rgb(232,242,235),GREEN);add.setOnClickListener(v->addEvent());page.addView(add,bottom(dp(8)));
+        Button export=btn("ICS speichern und Kalender öffnen",GREEN,Color.WHITE);export.setOnClickListener(v->export());page.addView(export,bottom(dp(8)));
+        Button clear=btn("Einträge zurücksetzen",Color.WHITE,MUTED);clear.setOnClickListener(v->clear());page.addView(clear);
+        TextView foot=txt("Beim Öffnen wählst du in deiner Kalender-App den Zielkalender. Wiederholungen und zusätzliche ICS-Felder bleiben erhalten.",12,MUTED,false);foot.setPadding(dp(3),dp(16),dp(3),0);page.addView(foot);
+        setContentView(sc);render();
+    }
+
+    private void openPicker(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("*/*");i.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"text/calendar","application/ics","application/octet-stream"});i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);try{startActivityForResult(i,OPEN);}catch(Exception e){toast("Dateiauswahl ist nicht verfügbar.");}}
+    private void incoming(Intent i){if(i==null)return;Uri u=i.getData();if(Intent.ACTION_VIEW.equals(i.getAction())&&u!=null)importChoice(Collections.singletonList(u));else if(Intent.ACTION_SEND.equals(i.getAction())){Uri s=i.getParcelableExtra(Intent.EXTRA_STREAM);if(s!=null)importChoice(Collections.singletonList(s));}}
+    @Override protected void onActivityResult(int code,int result,Intent i){super.onActivityResult(code,result,i);if(result!=RESULT_OK||i==null)return;if(code==OPEN){List<Uri> us=new ArrayList<>();if(i.getClipData()!=null)for(int n=0;n<i.getClipData().getItemCount();n++)us.add(i.getClipData().getItemAt(n).getUri());else if(i.getData()!=null)us.add(i.getData());if(!us.isEmpty())importChoice(us);}else if(code==SAVE&&i.getData()!=null)writeFile(i.getData());}
+    private void importChoice(List<Uri> us){if(data.events.isEmpty()){read(us,false);return;}new AlertDialog.Builder(this).setTitle("Einträge laden").setMessage("Zu deiner Liste hinzufügen oder die aktuelle Liste ersetzen?").setPositiveButton("Zusammenführen",(d,w)->read(us,true)).setNeutralButton("Ersetzen",(d,w)->read(us,false)).setNegativeButton("Abbrechen",null).show();}
+    private void read(List<Uri> us,boolean append){io.execute(()->{List<IcsCalendar> parsed=new ArrayList<>();for(Uri u:us){try(InputStream in=getContentResolver().openInputStream(u)){if(in!=null)parsed.add(IcsCalendar.parse(limited(in)));}catch(Exception ignored){}}runOnUiThread(()->{int total=0;for(IcsCalendar c:parsed)total+=c.events.size();if(total==0){toast("Keine lesbaren Termine gefunden; die bestehende Liste bleibt erhalten.");return;}if(!append){data.events.clear();data.timezones.clear();data.name="";}for(IcsCalendar c:parsed)data.addAll(c);settingName=true;name.setText(data.name);settingName=false;save();render();toast(total+(total==1?" Termin geladen.":" Termine geladen."));});});}
+    private String limited(InputStream in)throws Exception{ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[8192];int n,total=0;while((n=in.read(b))!=-1){total+=n;if(total>12*1024*1024)throw new IOException("Datei zu groß");out.write(b,0,n);}return out.toString("UTF-8");}
+
+    private void addEvent(){LocalDateTime t=LocalDateTime.now().withSecond(0).withNano(0);IcsCalendar.Event e=IcsCalendar.Event.fromLines(new ArrayList<>(Arrays.asList("BEGIN:VEVENT","DTSTART:"+t.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss",Locale.ROOT)),"DTEND:"+t.plusHours(1).format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss",Locale.ROOT)),"END:VEVENT")));if(e!=null){data.events.add(e);edit(e,true);}}
+    private void edit(IcsCalendar.Event e,boolean fresh){
+        LinearLayout f=col();f.setPadding(dp(20),dp(3),dp(20),0);EditText title=edit("Titel",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);title.setText(e.title.equals("(Ohne Titel)")?"":e.title);f.addView(txt("Titel",13,INK,true));f.addView(title,top(dp(4)));
+        CheckBox day=new CheckBox(this);day.setText("Ganztägiger Termin");day.setChecked(e.allDay);f.addView(day,top(dp(5)));
+        EditText start=picker(e.startDateTime(),e.allDay),end=picker(initialEnd(e),e.allDay);f.addView(txt("Beginn",13,INK,true),top(dp(6)));f.addView(start,top(dp(3)));f.addView(txt("Ende",13,INK,true),top(dp(8)));f.addView(end,top(dp(3)));
+        day.setOnCheckedChangeListener((b,checked)->{LocalDateTime s=readTime(start.getText().toString(),!checked),z=readTime(end.getText().toString(),!checked);start.setText(timeText(s,checked));end.setText(timeText(z,checked));});start.setOnClickListener(v->pickDate(start,day.isChecked()));end.setOnClickListener(v->pickDate(end,day.isChecked()));
+        EditText loc=edit("Ort",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);loc.setText(e.location);f.addView(txt("Ort",13,INK,true),top(dp(8)));f.addView(loc,top(dp(3)));
+        EditText desc=edit("Beschreibung",InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);desc.setSingleLine(false);desc.setMinLines(3);desc.setGravity(Gravity.TOP|Gravity.START);desc.setText(e.description);f.addView(txt("Beschreibung",13,INK,true),top(dp(8)));f.addView(desc,top(dp(3)));
+        AlertDialog d=new AlertDialog.Builder(this).setTitle(fresh?"Termin hinzufügen":"Termin bearbeiten").setView(f).setNegativeButton("Abbrechen",null).setPositiveButton("Speichern",null).setNeutralButton(fresh?null:"Löschen",null).create();d.setOnCancelListener(x->{if(fresh){data.events.remove(e);render();}});d.setOnShowListener(x->{d.getButton(-2).setOnClickListener(v->{if(fresh)data.events.remove(e);d.dismiss();render();});d.getButton(-1).setOnClickListener(v->{String n=title.getText().toString().trim();if(n.isEmpty()){title.setError("Titel eingeben");return;}boolean all=day.isChecked();LocalDateTime s=readTime(start.getText().toString(),!all),z=readTime(end.getText().toString(),!all);if(z.isBefore(s)){end.setError("Ende muss nach Beginn liegen");return;}e.update(n,s,z,all,loc.getText().toString().trim(),desc.getText().toString().trim());save();render();d.dismiss();});if(!fresh)d.getButton(-3).setOnClickListener(v->new AlertDialog.Builder(this).setMessage("Termin löschen?").setNegativeButton("Abbrechen",null).setPositiveButton("Löschen",(a,b)->{data.events.remove(e);save();render();d.dismiss();}).show());});d.show();
+    }
+    private LocalDateTime initialEnd(IcsCalendar.Event e){if(e.allDay&&e.endValue.trim().isEmpty())return e.startDateTime();LocalDateTime z=e.endDateTime();return e.allDay?z.minusDays(1):z;}
+    private EditText picker(LocalDateTime v,boolean day){EditText x=edit(day?"Datum auswählen":"Datum und Uhrzeit auswählen",InputType.TYPE_CLASS_DATETIME);x.setFocusable(false);x.setClickable(true);x.setText(timeText(v,day));return x;}
+    private String timeText(LocalDateTime v,boolean day){return v.format(day?DATE:DATE_TIME);}
+    private LocalDateTime readTime(String s,boolean timed){try{return LocalDateTime.parse(s,timed?DATE_TIME:DATE);}catch(Exception ex){return LocalDateTime.now().withSecond(0).withNano(0);}}
+    private void pickDate(EditText field,boolean day){LocalDateTime old=readTime(field.getText().toString(),!day);new DatePickerDialog(this,(v,y,m,d)->{LocalDateTime date=LocalDateTime.of(y,m+1,d,old.getHour(),old.getMinute());if(day)field.setText(timeText(date,true));else new TimePickerDialog(this,(q,h,min)->field.setText(timeText(date.withHour(h).withMinute(min),false)),old.getHour(),old.getMinute(),true).show();},old.getYear(),old.getMonthValue()-1,old.getDayOfMonth()).show();}
+
+    private void export(){if(data.events.isEmpty()){toast("Importiere oder erstelle zuerst einen Termin.");return;}Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("text/calendar");String filename=data.name.trim().replaceAll("[^\\p{L}\\p{N}_-]+","-").replaceAll("^-|-$","");i.putExtra(Intent.EXTRA_TITLE,(filename.isEmpty()?"kalenderwerker":filename)+".ics");try{startActivityForResult(i,SAVE);}catch(Exception e){toast("Dateiauswahl nicht verfügbar.");}}
+    private void writeFile(Uri uri){String text=data.serialize();io.execute(()->{boolean ok;try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")){if(out==null)throw new IOException();out.write(text.getBytes(StandardCharsets.UTF_8));out.flush();ok=true;}catch(Exception e){ok=false;}boolean saved=ok;runOnUiThread(()->{if(!saved){toast("Export fehlgeschlagen.");return;}save();new AlertDialog.Builder(this).setTitle("ICS-Datei gespeichert").setMessage("Soll die Datei jetzt mit einer Kalender-App geöffnet werden?").setNegativeButton("Fertig",null).setPositiveButton("Kalender-App wählen",(d,w)->{Intent view=new Intent(Intent.ACTION_VIEW);view.setDataAndType(uri,"text/calendar");view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);try{startActivity(Intent.createChooser(view,"Kalender-App auswählen"));}catch(Exception ex){toast("Datei gespeichert; keine passende App gefunden.");}}).show();});});}
+    private void clear(){if(data.events.isEmpty()){toast("Keine Einträge vorhanden.");return;}new AlertDialog.Builder(this).setTitle("Liste zurücksetzen?").setMessage("Geladene Termine und Kalendername werden von diesem Gerät gelöscht.").setNegativeButton("Abbrechen",null).setPositiveButton("Zurücksetzen",(d,w)->{data.events.clear();data.timezones.clear();data.name="";settingName=true;name.setText("");settingName=false;save();render();}).show();}
+
+    private void render(){if(rows==null)return;rows.removeAllViews();data.events.sort(Comparator.comparing(IcsCalendar.Event::startDateTime));count.setText(data.events.size()+(data.events.size()==1?" Termin":" Termine"));if(data.events.isEmpty()){LinearLayout empty=card();empty.addView(txt("Noch keine Einträge. Importiere eine ICS-Datei oder erstelle einen Termin.",14,MUTED,false));rows.addView(empty);return;}for(IcsCalendar.Event e:data.events){LinearLayout box=card();TextView t=txt(e.title,16,INK,true);box.addView(t);TextView meta=txt(e.displayTime()+(e.location.trim().isEmpty()?"":" · "+e.location),12,MUTED,false);meta.setPadding(0,dp(5),0,dp(10));box.addView(meta);LinearLayout acts=row();Button edit=btn("Bearbeiten",Color.rgb(232,242,235),GREEN);edit.setOnClickListener(v->edit(e,false));Button del=btn("Löschen",Color.rgb(250,241,239),Color.rgb(164,60,49));del.setOnClickListener(v->new AlertDialog.Builder(this).setMessage("Termin löschen?").setNegativeButton("Abbrechen",null).setPositiveButton("Löschen",(a,b)->{data.events.remove(e);save();render();}).show());acts.addView(edit,new LinearLayout.LayoutParams(0,dp(44),1));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(44),1);p.setMarginStart(dp(8));acts.addView(del,p);box.addView(acts);rows.addView(box,bottom(dp(9)));}}
+    private void load(){String raw=getSharedPreferences("calendar_draft",MODE_PRIVATE).getString("ics","");if(!raw.isEmpty())data.addAll(IcsCalendar.parse(raw));}
+    private void save(){getSharedPreferences("calendar_draft",MODE_PRIVATE).edit().putString("ics",data.serialize()).apply();}
+    private LinearLayout col(){LinearLayout x=new LinearLayout(this);x.setOrientation(1);return x;}private LinearLayout row(){LinearLayout x=new LinearLayout(this);x.setOrientation(0);x.setGravity(Gravity.CENTER_VERTICAL);return x;}
+    private LinearLayout card(){LinearLayout x=col();x.setPadding(dp(15),dp(15),dp(15),dp(15));x.setBackground(bg(Color.WHITE,15));x.setElevation(dp(1));return x;}
+    private TextView txt(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
+    private EditText edit(String hint,int type){EditText e=new EditText(this);e.setTextSize(15);e.setSingleLine((type&InputType.TYPE_TEXT_FLAG_MULTI_LINE)==0);e.setInputType(type);e.setHint(hint);e.setPadding(dp(11),dp(9),dp(11),dp(9));e.setBackground(bg(Color.WHITE,10));return e;}
+    private Button btn(String s,int bg,int fg){Button b=new Button(this);b.setText(s);b.setTextSize(14);b.setAllCaps(false);b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);b.setTextColor(fg);b.setBackgroundTintList(ColorStateList.valueOf(bg));b.setMinHeight(dp(46));return b;}
+    private GradientDrawable bg(int c,int r){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(dp(r));d.setStroke(dp(1),Color.rgb(226,232,225));return d;}
+    private LinearLayout.LayoutParams bottom(int n){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=n;return p;}private LinearLayout.LayoutParams top(int n){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=n;return p;}
+    private int dp(int n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
+}
