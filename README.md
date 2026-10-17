@@ -4,7 +4,9 @@ Native Android app for importing and editing `.ics` calendars, then writing even
 
 ## Features
 
-- Import one or more iCalendar files with Android's document picker or open a shared `.ics` file.
+- Import one or more iCalendar files with Android's unrestricted document picker or open a shared `.ics` file.
+- Choose a folder for a recursive ICS search (up to 5,000 files), or search the 30 most recently selected/exported files. Results show the modification date and sort newest first.
+- Open files even if their MIME type or extension is unusual; decode UTF-8, UTF-16, and common Windows-1252 exports.
 - Select a writable calendar account available through Android's Calendar Provider (Google, Microsoft, Samsung, device calendars, and other installed providers).
 - Edit event titles, start/end dates, all-day state, location, and description; add or remove entries.
 - Preserve recurrence rules, time-zone definitions, alarms, and unknown event properties in the `.ics` export.
